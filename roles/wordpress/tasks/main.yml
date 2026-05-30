@@ -1,0 +1,35 @@
+---
+# 1. Скачиваем и распаковываем WordPress
+- name: Download and extract WordPress
+  ansible.builtin.unarchive:
+    src: "{{ wp_archive_url }}"
+    dest: "{{ wp_install_dir }}"
+    remote_src: yes       # Скачивать и распаковывать прямо на целевом хосте
+    extra_opts:
+      - --strip-components=1 # Отрезает корневую папку 'wordpress/' внутри архива, чтобы файлы легли прямо в /var/www/wordpress
+    owner: nginx
+    group: nginx
+    creates: "{{ wp_install_dir }}/wp-settings.php" # Идемпотентность: если файл есть, не скачивать заново
+
+# 2. Устанавливаем правильные права на директории (Важно для безопасности WP)
+- name: Set correct permissions for WordPress directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: nginx
+    group: nginx
+    mode: '0755'
+  loop:
+    - "{{ wp_install_dir }}/wp-content"
+    - "{{ wp_install_dir }}/wp-content/themes"
+    - "{{ wp_install_dir }}/wp-content/plugins"
+    - "{{ wp_install_dir }}/wp-content/uploads"
+
+# 3. Деплоим конфигурационный файл из шаблона
+- name: Deploy wp-config.php from template
+  ansible.builtin.template:
+    src: wp-config.php.j2
+    dest: "{{ wp_install_dir }}/wp-config.php"
+    owner: nginx
+    group: nginx
+    mode: '0640' # Чтение и запись только для владельца и группы, остальным нельзя

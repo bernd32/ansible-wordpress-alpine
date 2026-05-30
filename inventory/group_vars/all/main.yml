@@ -1,0 +1,7 @@
+---
+# Параметры базы данных для WordPress
+wp_db_name: "wordpress_db"
+wp_db_user: "wp_user"
+
+# Разрешаем подключение к БД только с IP-адреса хоста node-1
+wp_db_allowed_host: "{{ hostvars['node-1']['ansible_host'] }}"

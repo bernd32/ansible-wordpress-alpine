@@ -1,0 +1,11 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Restart PHP-FPM
+  ansible.builtin.service:
+    name: php-fpm{{ php_version }}
+    state: restarted
+
+- name: Reload Nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded

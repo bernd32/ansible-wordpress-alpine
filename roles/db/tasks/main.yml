@@ -1,0 +1,95 @@
+---
+# 0. Включаем community репозиторий (нужен для py3-pymysql)
+- name: Enable Alpine community repository
+  ansible.builtin.replace:
+    path: /etc/apk/repositories
+    regexp: '^#(.*/community.*)$'
+    replace: '\1'
+    backup: true
+
+# 1. Обновляем кэш пакетов после изменения репозиториев
+- name: Update APK cache
+  community.general.apk:
+    update_cache: yes
+
+# 2. Установка пакетов
+- name: Install MariaDB and Python MySQL bindings
+  community.general.apk:
+    name:
+      - mariadb
+      - mariadb-client
+      - py3-pymysql
+    state: present
+    update_cache: no # Кэш уже обновлен выше, повторять не нужно
+
+# 2.5. Инициализация директории данных (Alpine specific)
+- name: Initialize MariaDB data directory
+  ansible.builtin.command: /etc/init.d/mariadb setup
+  args:
+    # Ansible не будет запускать команду повторно, если файл уже существует
+    creates: /var/lib/mysql/ibdata1
+  become: yes
+
+# 3. Запуск сервиса
+- name: Ensure MariaDB service is started and enabled on boot
+  ansible.builtin.service:
+    name: mariadb
+    state: started
+    enabled: yes
+
+# 4. Настройка сети (разрешаем внешние подключения)
+- name: Configure MariaDB to listen on all network interfaces
+  ansible.builtin.lineinfile:
+    path: /etc/my.cnf.d/mariadb-server.cnf
+    regexp: '^#?bind-address'
+    line: 'bind-address = 0.0.0.0'
+    backup: true
+    insertafter: '^\[mysqld\]'
+  notify: Restart MariaDB
+
+  # 4.1. Убираем мусор: удаляем любые строки с bind-address, которые ранее насовал lineinfile
+- name: Remove incorrectly placed bind-address lines (cleanup)
+  ansible.builtin.lineinfile:
+    path: /etc/my.cnf.d/mariadb-server.cnf
+    regexp: '^bind-address'
+    state: absent
+  notify: Restart MariaDB
+
+# 4.2. Закомментируем skip-networking, если он активен (в Alpine он часто включен по умолчанию)
+- name: Ensure skip-networking is commented out
+  ansible.builtin.replace:
+    path: /etc/my.cnf.d/mariadb-server.cnf
+    regexp: '^skip-networking'
+    replace: '#skip-networking'
+  notify: Restart MariaDB
+
+# 4.3. Магия ini_file: правильно прописываем bind-address строго в секцию [mysqld]
+- name: Configure MariaDB bind-address in mysqld section
+  community.general.ini_file:
+    path: /etc/my.cnf.d/mariadb-server.cnf
+    section: mysqld
+    option: bind-address
+    value: '0.0.0.0'
+    mode: '0644'
+  notify: Restart MariaDB
+
+# 5. Принудительный сброс хендлеров
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+# 6. Создание базы данных
+- name: Create WordPress database
+  community.mysql.mysql_db:
+    name: "{{ wp_db_name }}"
+    state: present
+    login_unix_socket: /run/mysqld/mysqld.sock
+
+# 7. Создание пользователя и выдача прав
+- name: Create WordPress DB user and grant privileges
+  community.mysql.mysql_user:
+    name: "{{ wp_db_user }}"
+    password: "{{ wp_db_password }}"
+    host: "{{ wp_db_allowed_host }}"
+    priv: "{{ wp_db_name }}.*:ALL"
+    state: present
+    login_unix_socket: /run/mysqld/mysqld.sock

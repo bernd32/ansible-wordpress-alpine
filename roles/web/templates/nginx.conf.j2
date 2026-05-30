@@ -1,0 +1,22 @@
+server {
+    listen 80;
+    server_name {{ nginx_server_name }};
+    root {{ wp_install_dir }};
+
+    index index.php index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass unix:/run/php-fpm{{ php_version }}/www.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_index index.php;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}

@@ -1,0 +1,100 @@
+#SPDX-License-Identifier: MIT-0
+---
+# 1. Установка пакетов
+- name: Install Nginx, PHP-FPM and WordPress requirements
+  community.general.apk:
+    name:
+      - nginx
+      - php{{ php_version }}-fpm
+      - php{{ php_version }}-mysqli
+      - php{{ php_version }}-gd
+      - php{{ php_version }}-curl
+      - php{{ php_version }}-xml
+      - php{{ php_version }}-zip
+      - php{{ php_version }}-session
+      - php{{ php_version }}-json
+      - php{{ php_version }}-openssl
+      - php{{ php_version }}-pecl-imagick
+      - tar
+      - curl
+    state: present
+    update_cache: yes
+
+# 2. Убираем дефолтный конфиг Nginx, чтобы избежать конфликта на порту 80
+- name: Remove default Nginx configuration
+  ansible.builtin.file:
+    path: /etc/nginx/http.d/default.conf
+    state: absent
+  notify: Reload Nginx
+
+# 3. Создаём корневую директорию для WordPress
+- name: Create WordPress web root directory
+  ansible.builtin.file:
+    path: "{{ wp_install_dir }}"
+    state: directory
+    owner: nginx
+    group: nginx
+    mode: '0755'
+
+# 4. Настраиваем PHP-FPM (пользователь и группа)
+# В Alpine по умолчанию уже стоит nginx, но мы фиксируем это явно для идемпотентности
+- name: Set PHP-FPM user to nginx
+  ansible.builtin.lineinfile:
+    path: /etc/php{{ php_version }}/php-fpm.d/www.conf
+    regexp: '^user = '
+    line: 'user = nginx'
+  notify: Restart PHP-FPM
+
+- name: Set PHP-FPM group to nginx
+  ansible.builtin.lineinfile:
+    path: /etc/php{{ php_version }}/php-fpm.d/www.conf
+    regexp: '^group = '
+    line: 'group = nginx'
+  notify: Restart PHP-FPM
+
+# Настраиваем PHP-FPM на использование Unix-сокета
+- name: Configure PHP-FPM to listen on Unix socket
+  ansible.builtin.lineinfile:
+    path: "/etc/php{{ php_version }}/php-fpm.d/www.conf"
+    regexp: '^listen = '
+    line: "listen = /run/php-fpm{{ php_version }}/www.sock"
+  notify: Restart PHP-FPM
+
+# Устанавливаем владельца сокета (иначе Nginx не сможет к нему подключиться и будет 502 ошибка)
+- name: Set PHP-FPM socket owner to nginx
+  ansible.builtin.lineinfile:
+    path: "/etc/php{{ php_version }}/php-fpm.d/www.conf"
+    regexp: '^;?listen.owner = '
+    line: 'listen.owner = nginx'
+  notify: Restart PHP-FPM
+
+- name: Set PHP-FPM socket group to nginx
+  ansible.builtin.lineinfile:
+    path: "/etc/php{{ php_version }}/php-fpm.d/www.conf"
+    regexp: '^;?listen.group = '
+    line: 'listen.group = nginx'
+  notify: Restart PHP-FPM
+
+# 5. Деплоим конфиг виртуального хоста Nginx
+- name: Deploy Nginx virtual host configuration
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/http.d/wordpress.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload Nginx
+
+# 6. Запускаем сервисы
+- name: Start and enable Nginx and PHP-FPM services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - nginx
+    - php-fpm{{ php_version }}
+
+# 7. Применяем изменения конфигураций немедленно
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

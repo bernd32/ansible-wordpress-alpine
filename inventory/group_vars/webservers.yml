@@ -1,0 +1,10 @@
+---
+# Настройки веб-сервера
+nginx_server_name: "192.168.88.50" # Или домен, если пропишешь в /etc/hosts
+wp_install_dir: "/var/www/localhost/htdocs/wordpress"
+
+wp_version: "6.4.3" 
+wp_archive_url: "https://wordpress.org/wordpress-{{ wp_version }}.tar.gz"
+
+# Current PHP Version in Alpine 
+php_version: "85"
